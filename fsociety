@@ -1,0 +1,402 @@
+#!/usr/bin/python3
+
+import sys, os, mysql.connector, re
+
+mois = ['Janvier', 'Fevrier', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Decembre']
+
+def model():
+    return  mysql.connector.connect(host='localhost', user='gaetan', password='*****', database='foyer')
+
+def form(argent):
+    argent = str(argent)
+    newForm, c = [], 0
+    for i in argent[::-1]:
+        if c % 3 == 0:
+            newForm.append(' ')
+        newForm.append(i)
+        c += 1
+    return ''.join(newForm)[::-1]
+
+
+def syntaxeError(err=''):
+    if err != '':
+        print('Syntaxe Error près de :', err)
+    print()
+    print(" Usage: fsociety [option] ...")
+    print("""
+        -a --add-cotisation [argent] [prenom] [mois] [annee] Pour le payement de cotisation repas
+        -f --foyer-food [argent] [prenom] [date] Pour l'argent de nouriture de tous les jours
+        -F --foyer-autre-frais [argent] [prenom] [motif] [mois] [annee] Pour faire sortir de l'argent du foyer
+        -h --help Voir la page d'aide
+        -H --history [nombre] Voir l'historique de transaction
+        -i --info-user [prenom] [mois] [annee] Pour avoir l'info d'un utilisateur en un mois
+        -I --info-user-all [mois] Pour avoir une vue de tous les utilisateurs
+        -j --jirama [argent] [prenom] [mois] Pour payer l'argent du Jirama
+        -l --list Affiche la liste des utilisateurs
+        -R --remove [argent] [prenom] [motif]  Pour retirer l'argent de quelqu'un
+        -s --stat [mois] [annee]
+        -S --stat-jirama [mois] [annee]
+
+    """)
+
+
+print()
+os.system(' echo "-->  @fsociety program" | lolcat ')
+print()
+
+if '-h' in sys.argv or '--help' in  sys.argv:
+    os.system("figlet 'Page Aide' | lolcat")
+    syntaxeError()
+    print("""
+        Exemple:  fsociety -a 15000 gaetan janvier 2019
+                  fsociety --stat avril 2019
+                  fsociety --historique 5
+
+
+        Author:  Gaetan Jonathan
+
+        Copyright: @foyer fsociety Ambatoroka
+    """)
+
+elif '-a' in sys.argv or '--add-cotisation' in sys.argv:
+    if len(sys.argv) > 5:
+        liaison = model()
+        cursor = liaison.cursor()
+
+        if re.match(r'\d+$', sys.argv[2]):
+            cursor.execute("SELECT 1 FROM Etudiant where prenom = %s", (sys.argv[3].capitalize(), ))
+
+            if len(cursor.fetchall()) > 0:
+
+                if sys.argv[4].capitalize() in mois:
+
+                    if re.match(r'\d{4}$', sys.argv[5]):
+                        cursor.execute(" SELECT 1 from Etudiant where mois = %s and annee = %s and prenom = %s", (sys.argv[4].capitalize(), sys.argv[5], sys.argv[3].capitalize()))
+
+                        if len(cursor.fetchall()) > 0:
+                            try:
+                                cursor.execute("""
+                                    UPDATE Etudiant SET argent = argent + %s WHERE prenom = %s
+                                """, (sys.argv[2], sys.argv[3].capitalize()) )
+
+                                cursor.execute("""
+                                    INSERT INTO Transaction(date, motif, somme, Etudiant_prenom) VALUES (NOW(), 'cotisation repas', %s, %s)
+                                """, (sys.argv[2], sys.argv[3].capitalize()))
+                                liaison.commit()
+                                os.system('figlet S u c c e s   | lolcat ')
+
+                            except:
+                                liaison.rollback()
+                                print("Erreur lors de l'action")
+
+                        else:
+                            try:
+                                cursor.execute("""
+                                    INSERT INTO Etudiant(argent, prenom, mois, annee) VALUES (%s, %s, %s, %s)
+                                """, (sys.argv[2], sys.argv[3].capitalize(), sys.argv[4], sys.argv[5]) )
+
+                                cursor.execute("""
+                                    INSERT INTO Transaction(date, motif, somme, Etudiant_prenom) VALUES (NOW(), 'cotisation repas', %s, %s)
+                                """, (sys.argv[2], sys.argv[3].capitalize()))
+                                liaison.commit()
+                                os.system('figlet S u c c e s   | lolcat ')
+
+                            except:
+                                liaison.rollback()
+                                print("Erreur lors de l'action")
+                    else:
+                        syntaxeError(sys.argv[5])
+                else:
+                    syntaxeError(sys.argv[4])
+            else:
+                syntaxeError(sys.argv[3])
+
+        else:
+            syntaxeError(sys.argv[2])
+    else:
+        print(">> argument insuffisant \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
+
+elif '-i' in sys.argv or '--info-user' in sys.argv:
+    if len(sys.argv) > 4:
+        liaison = model()
+        cursor = liaison.cursor()
+        cursor.execute("SELECT 1 FROM Etudiant WHERE prenom = %s", (sys.argv[2].capitalize(), ))
+        if len(cursor.fetchall()) > 0:
+            if sys.argv[3].capitalize() in mois:
+                if re.match(r'\d{4}$', sys.argv[4]):
+                    cursor.execute("SELECT argent FROM Etudiant WHERE prenom = 'foyer' and mois = %s and annee = %s", (sys.argv[3].capitalize(), sys.argv[4]))
+                    try:
+                        AgP = cursor.fetchone()[0]
+                    except:
+                        AgP = 0
+
+                    cursor.execute("""
+                        SELECT prenom, argent, (%s - argent), mois FROM Etudiant where prenom = %s and mois = %s and annee = %s
+                    """, (AgP, sys.argv[2].capitalize(), sys.argv[3].capitalize(), sys.argv[4]) )
+
+                    vide = True
+                    for value in cursor:
+                        print(f"""
+                    * ************
+                    *  PRENOM           {value[0]}
+                    * ************
+                    * ************
+                    * SOMME PAYER       {value[1]} Ar
+                    * ************
+                    * ************
+                    * RESTE             {value[2]} Ar
+                    * ************
+                    * ************
+                    * TOTAL             {AgP} Ar
+                    * ************
+                    * ************
+                    * MOIS              {value[3]}
+                    * ************
+
+                        """)
+                        vide = False
+
+                    if vide:
+                        os.system("figlet 'Error 404' | lolcat ; echo -e 'Note: Not Found \n'")
+                else:
+                    syntaxeError(sys.argv[4])
+            else:
+                syntaxeError(sys.argv[3])
+        else:
+            syntaxeError(sys.argv[2])
+    else:
+        print(">> argument insuffisant \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
+
+
+
+elif '-I' in sys.argv or '--info-user-all' in sys.argv:
+    if len(sys.argv) > 3:
+        liaison = model()
+        cursor = liaison.cursor()
+
+
+        if sys.argv[2].capitalize() in mois:
+            if re.match(r'\d{4}$', sys.argv[3]):
+                cursor.execute("SELECT argent FROM Etudiant WHERE prenom = 'foyer' AND mois = %s AND annee = %s", (sys.argv[2].capitalize(), sys.argv[3]))
+                AgP = cursor.fetchone()[0]
+
+                cursor.execute("SELECT distinct(prenom) FROM Etudiant WHERE prenom <> 'foyer' ")
+                users = cursor.fetchall()
+                for user in users:
+                    user = user[0]
+                    cursor.execute("""
+                        SELECT prenom, argent, mois FROM Etudiant WHERE prenom = %s and mois = %s and annee = %s
+                    """, (user, sys.argv[2].capitalize(), sys.argv[3]) )
+
+                    for value in cursor:
+                            print(f"""
+                        * ************
+                        *  PRENOM           {value[0]}
+                        * ************
+                        * ************
+                        * SOMME PAYER       {value[1]} Ar
+                        * ************
+                        * ************
+                        * RESTE             {AgP - value[1]} Ar
+                        * ************
+                        * ************
+                        * TOTAL             {AgP} Ar
+                        * ************
+                        * ************
+                        * MOIS              {value[2]}
+                        * ************
+
+                        """)
+
+            else:
+                syntaxeError(sys.argv[3])
+        else:
+            syntaxeError(sys.argv[2])
+
+    else:
+        print(">> argument insuffisant \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
+
+elif '-f' in sys.argv or '--foyer-food' in sys.argv:
+    if len(sys.argv) > 4:
+        if re.match(r'\d{3,}', sys.argv[2]):
+            liaison = model()
+            cursor = liaison.cursor()
+            cursor.execute("SELECT 1 FROM Etudiant WHERE prenom = %s", (sys.argv[3].capitalize(), ))
+            if len(cursor.fetchall()) > 0:
+                if re.match(r'^20\d{2}-[0-1]\d-[0-3]\d', sys.argv[4]):
+                    try:
+                        cursor.execute("""
+                            INSERT INTO Repas(argent, prenom, date) VALUES (%s, %s, Date(%s))
+                        """, (sys.argv[2], sys.argv[3].capitalize(), sys.argv[4]) )
+
+                        cursor.execute("""
+                                INSERT INTO Transaction(date, motif, somme, Etudiant_prenom) VALUES (NOW(), 'depense repas', %s, %s)
+                        """, (-int(sys.argv[2]), sys.argv[3].capitalize()))
+
+                        liaison.commit()
+                        os.system('figlet S u c c e s   | lolcat ')
+
+                    except:
+                        liaison.rollback()
+                        print("Erreur lors de l'action")
+
+                else:
+                    syntaxeError(sys.argv[4])
+            else:
+                syntaxeError(sys.argv[3])
+        else:
+            syntaxeError(sys.argv[2])
+    else:
+        print(">> argument insuffisant \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
+
+elif '-s' in sys.argv or '--stat' in sys.argv:
+    if len(sys.argv) > 3:
+        if sys.argv[2].capitalize() in mois:
+            if re.match(r'^20\d{2}$', sys.argv[3]):
+                try:
+                    liaison = model()
+                    cursor = liaison.cursor()
+                    cursor.execute("SELECT sum(argent) FROM Etudiant WHERE mois = %s AND annee = %s AND prenom <> 'foyer' ", (sys.argv[2].capitalize(), sys.argv[3]))
+                    try:
+                        argent_mois_recu = cursor.fetchone()[0]
+                    except:
+                        argent_mois_recu = 0
+                    if argent_mois_recu is None:
+                        argent_mois_recu = 0
+
+                    cursor.execute("SELECT 9*argent FROM Etudiant WHERE mois = %s AND annee = %s AND prenom = 'foyer' ", (sys.argv[2].capitalize(), sys.argv[3]))
+                    try:
+                        argent_mois_total = cursor.fetchone()[0]
+                    except:
+                        argent_mois_total = 0
+                    if argent_mois_total is None:
+                        argent_mois_total = 0
+
+                    cursor.execute("SELECT sum(argent) FROM Repas WHERE MONTH(date) = %s AND YEAR(date) = %s", (mois.index(sys.argv[2].capitalize()) + 1, sys.argv[3]))
+                    try:
+                        argent_mois_depense = cursor.fetchone()[0]
+                    except:
+                        argent_mois_depense = 0
+                    if argent_mois_depense is None:
+                        argent_mois_depense = 0
+
+                    cursor.execute("SELECT sum(argent) FROM Depense WHERE mois = %s AND annee = %s", (sys.argv[2].capitalize(), sys.argv[3]))
+                    try:
+                        argent_mois_depense_autre = cursor.fetchone()[0]
+                    except:
+                        argent_mois_depense_autre = 0
+                    if argent_mois_depense_autre is None:
+                        argent_mois_depense_autre = 0
+
+                    cursor.execute(" SELECT SUM(somme) FROM Transaction ")
+                    try:
+                        all_argent = cursor.fetchone()[0]
+                    except:
+                        all_argent = 0
+                    if all_argent is None:
+                        all_argent = 0
+
+                    print(f"""
+                * ********************
+                *   MOIS                      {sys.argv[2].upper()}
+                * ********************
+                * **********************
+                *  ARGENT TOTAL A PAYER       {form(argent_mois_total)} Ar
+                * **********************
+                * **********************
+                *  ARGENT PAYER ACTUEL        {form(argent_mois_recu)} Ar
+                * *********************
+                * *********************
+                *   ARGENT DEPENSER           {form(argent_mois_depense + argent_mois_depense_autre)} Ar
+                * *********************
+                * *********************
+                *  ARGENT RESTE A PAYER       {form(argent_mois_total - argent_mois_recu)} Ar
+                * *********************
+                * *********************
+                *  RESTE MOIS ACTUEL          {form(argent_mois_recu - argent_mois_depense - argent_mois_depense_autre)} Ar
+                * ********************
+                * ********************
+                *   RESTE ARGENT              {form(all_argent)} Ar
+                * ********************
+
+                    """)
+                except:
+                    os.system(' figlet Erreur | lolcat')
+                    print("Date encore non disponible... Verifier la date entrée ")
+
+        else:
+            syntaxeError(sys.argv[2])
+    else:
+        print(">> argument insuffisant \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
+
+
+elif '-H' in sys.argv or '--history' in sys.argv:
+    if len(sys.argv) > 2:
+        liaison = model()
+        cursor = liaison.cursor()
+        if re.match(r'\d+$', sys.argv[2]):
+            cursor.execute(" SELECT * FROM Transaction ORDER BY date DESC LIMIT %s ", (int(sys.argv[2]), ))
+            os.system("figlet Historique")
+            os.system('echo @recent | lolcat ')
+            for rep in cursor:
+                print(f"""
+                {rep[1]}
+                {rep[2]}
+                {form(rep[3])} Ar
+                {rep[4]}""")
+
+    else:
+        print(">> argument insuffisant \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
+
+
+elif '-F' in sys.argv or '--foyer-autre-frais' in sys.argv:
+    if len(sys.argv) > 6:
+        if re.match(r'\d+$', sys.argv[2]):
+            liaison = model()
+            cursor = liaison.cursor()
+            cursor.execute("SELECT 1 FROM Etudiant WHERE prenom = %s", (sys.argv[3].capitalize(), ))
+            if len(cursor.fetchall()) > 0:
+                if sys.argv[5].capitalize() in mois:
+                    if re.match(r'\d{4}', sys.argv[6]):
+                        try:
+                            cursor.execute("""
+                                INSERT INTO Depense(argent, prenom, motif, mois, annee) VALUES (%s, %s, %s, %s, %s)
+                            """, (sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5].capitalize(), sys.argv[6]) )
+
+                            cursor.execute("""
+                                    INSERT INTO Transaction(date, motif, somme, Etudiant_prenom) VALUES (NOW(), %s, %s, %s)
+                            """, (sys.argv[4], -int(sys.argv[2]), sys.argv[3].capitalize()))
+
+                            liaison.commit()
+                            os.system('figlet S u c c e s  | lolcat ')
+                        except:
+                            liaison.rollback()
+                            print("Erreur lors de l'action")
+                    else:
+                        syntaxeError(sys.argv[6])
+                else:
+                    syntaxeError(sys.argv[5])
+
+            else:
+                syntaxeError(sys.argv[3])
+        else:
+            syntaxeError(sys.argv[2])
+    else:
+        print(">> argument insuffisant \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
+
+elif '-l' in sys.argv or '--list' in sys.argv:
+    liaison = model()
+    cursor = liaison.cursor()
+    cursor.execute("SELECT distinct(prenom) FROM Etudiant ORDER BY prenom")
+
+    for user in cursor:
+        if user[0] == 'foyer':
+            continue
+        print(f" >>> {user[0]} ")
+    print()
+
+else:
+    if len(sys.argv) > 1:
+        print(">> argument inconnu \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
+    else:
+        print(">> argument manquant \n \n Essayer: \n$ fsociety --help pour la page d'aide \n")
